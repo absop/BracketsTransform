@@ -1,142 +1,117 @@
-from collections import OrderedDict
-
 import sublime
 import sublime_plugin
 
 
-BRACKETS = {'(': ')', '[': ']', '{': '}'}
+class BracketsOperater(sublime_plugin.TextCommand):
+    left_brackets  = ('(', '[', '{')
+    right_brackets = (')', ']', '}')
+    brackets = {
+        "(": ")",
+        "[": "]",
+        "{": "}",
+        ")": "(",
+        "]": "[",
+        "}": "{"
+    }
+    threshold = 1000000
 
+    def cover(self, left, right):
+        return sublime.Region(left.a, right.b)
 
-def is_matched_brackets(l, r):
-    if l in BRACKETS:
-        return BRACKETS[l] == r
-    return False
+    def all_parents(self):
+        pairs = []
+        for region in self.view.sel():
+            parents = self.parents(region.a, self.threshold)
+            if parents:
+                if pairs and parents == pairs[-1]:
+                    continue
+                else:
+                    pairs.append(parents)
+        return pairs
 
+    # 以后考虑渐进增大搜索区域，不然对于大文件的编辑，
+    # 即使光标置于空括号内部，也将会导致一定的延迟，鉴于人们一般不会对
+    # 不再视界之内的内容进行操作，故此处搜做的范围平均来说不会超过10000，
+    # 然而如下的一开始便对一个很大的范围进行 extract_tokens是很不合理的，
+    # 这是对大文件使用这些命令，会导致延迟的一个重要原因
+    def parents(self, point, threshold):
+        begin = max(point - threshold//2, 0)
+        end = min(begin + threshold, self.view.size())
+        extract_tokens = self.view.extract_tokens_with_scopes
+        ltokens = extract_tokens(sublime.Region(begin, point))
+        rtokens = extract_tokens(sublime.Region(point, end))
+        if ltokens and rtokens:
+            if ltokens[-1] == rtokens[0]:
+                ltokens.pop()
+            begin = (ltokens if ltokens else rtokens)[0][0].a
+            end = rtokens[-1][0].b
+            contents = self.view.substr(sublime.Region(begin, end))
 
-class BracketRegion:
-    def __init__(self, shape, left, right):
-        self.shape = shape
-        self.left = left
-        self.right = right
+            stack = []
+            ltokens.reverse()
+            for region, scope in ltokens:
+                token = contents[region.a - begin:region.b - begin]
+                if token in self.brackets:
+                    # skip ignore
+                    if "comment" in scope or "string" in scope:
+                        continue
 
-    def region_all(self):
-        return sublime.Region(self.left.a, self.right.b)
+                    if token in self.right_brackets:
+                        stack.append(token)
 
-    def left_move(self, cur):
-        for r in (self.left, self.right):
-            r.a -= cur
-            r.b -= cur
+                    elif stack:
+                        if self.brackets[token] == stack[-1]:
+                            stack.pop()
+                        else:
+                            return False
+                    else:
+                        left_region = region
+                        left_parent = token
 
+                        for region, scope in rtokens:
+                            token = contents[region.a - begin:region.b - begin]
+                            if token in self.brackets:
+                                # skip ignore
+                                if "comment" in scope or "string" in scope:
+                                    continue
 
-def select_bracket(v):
-    def selector():
-        v.run_command('expand_selection', {'to': "brackets"})
-        return v.sel()[0]
+                                if token in self.left_brackets:
+                                    stack.append(token)
 
-    def matched(region):
-        a = region.begin()
-        b = region.end()
-        lb = v.substr(a)
-        rb = v.substr(b - 1)
-        if is_matched_brackets(lb, rb):
-            return BracketRegion(
-                lb, sublime.Region(a, a + 1),
-                sublime.Region(b - 1, b))
-        else:
-            return False
+                                elif stack:
+                                    if self.brackets[token] == stack[-1]:
+                                        stack.pop()
+                                    else:
+                                        return False
 
-    cursor_0 = v.sel()[0].a
-    region = selector()
-    if (region.empty() and region.a == cursor_0):
+                                elif self.brackets[left_parent] == token:
+                                        return (left_region, region)
+
+                                else:
+                                    return False
         return False
-    else:
-        first_match = matched(region)
-        if (first_match):
-            return first_match
-        else:
-            return matched(selector())
 
 
-class BracketsSelectorCommand(sublime_plugin.TextCommand):
+class BracketsSelectorCommand(BracketsOperater):
     def run(self, edit):
-
-        v = self.view
-        selections = [s for s in v.sel()]
-        v.sel().clear()
-        should_selected = []
-
-        for s in selections:
-            v.sel().add(s)
-            br = select_bracket(v)
-            if br:
-                should_selected.append(br.region_all())
-            else:
-                should_selected.append(s)
-            v.sel().clear()
-
-        v.sel().add_all(should_selected)
-        v.show_at_center(should_selected[0])
+        for p in self.all_parents():
+            cover = self.cover(p[0], p[1])
+            self.view.sel().add(cover)
 
 
-class BracketsTransformCommand(sublime_plugin.TextCommand):
-
-    def run(self, edit, tobe):
-        def replace_bracket(br):
-            if br.shape != tobe:
-                v.replace(edit, br.left, tobe)
-                v.replace(edit, br.right, BRACKETS[tobe])
-
-        v = self.view
-        cursors_to = []
-        cursors = [s.a for s in v.sel()]
-        v.sel().clear()
-
-        for cursor in cursors:
-            v.sel().add(cursor)
-            br = select_bracket(v)
-            if br:
-                replace_bracket(br)
-                cursors_to.append(br.left.a)
-            else:
-                cursors_to.append(cursor)
-            v.sel().clear()
-
-        v.sel().add_all(cursors_to)
-        v.show_at_center(cursors_to[0])
+class BracketsTransformCommand(BracketsOperater):
+    def run(self, edit, to):
+        for p in self.all_parents():
+            if self.view.substr(p[0]) == to:
+                continue
+            self.view.replace(edit, p[0], to)
+            self.view.replace(edit, p[1], self.brackets[to])
 
 
-class BracketsTakeOffCommand(sublime_plugin.TextCommand):
+class BracketsTakeOffCommand(BracketsOperater):
     def run(self, edit):
-        def take_off(br):
-            region = br.region_all()
-            contain = self.view.substr(sublime.Region(br.left.b, br.right.a))
-            self.view.replace(edit, region, contain)
-            region.b -= 2
-            return region
-
-        v = self.view
-        selections = [s.a for s in v.sel()]
-        v.sel().clear()
-
-        bregions = OrderedDict()
-        for s in selections:
-            v.sel().add(s)
-            br = select_bracket(v)
-            if br:
-                bregions[br.left.a] = br
-            v.sel().clear()
-
-        bregions = [bregions[key] for key in bregions]
-
-        should_selected = []
-        left_move = 0
-        for br in bregions:
-            br.left_move(left_move)
-            should_selected.append((take_off(br)))
-            left_move += 2
-
-        if not should_selected:
-            should_selected = selections
-
-        v.sel().add_all(should_selected)
-        v.show_at_center(should_selected[0])
+        regions = [r for p in self.all_parents() for r in p]
+        regions.sort()
+        regions.reverse()
+        for r in regions:
+            self.view.erase(edit, r)

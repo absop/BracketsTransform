@@ -1,7 +1,9 @@
 [
-  { "keys": ["ctrl+alt+9"], "command": "brackets_transform", "args": {"tobe": "("}},
-  { "keys": ["ctrl+alt+["], "command": "brackets_transform", "args": {"tobe": "["}},
-  { "keys": ["ctrl+alt+b"], "command": "brackets_transform", "args": {"tobe": "{"}},
+  { "keys": ["ctrl+alt+9"], "command": "brackets_transform", "args": {"to": "("}},
+  { "keys": ["ctrl+alt+0"], "command": "brackets_transform", "args": {"to": "("}},
+  { "keys": ["ctrl+alt+["], "command": "brackets_transform", "args": {"to": "["}},
+  { "keys": ["ctrl+alt+]"], "command": "brackets_transform", "args": {"to": "["}},
+  { "keys": ["ctrl+alt+b"], "command": "brackets_transform", "args": {"to": "{"}},
   { "keys": ["ctrl+alt+."], "command": "brackets_take_off" },
   { "keys": ["ctrl+alt+,"], "command": "brackets_selector"},
 ]
