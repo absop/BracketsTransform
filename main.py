@@ -110,8 +110,19 @@ class BracketsTransformCommand(BracketsOperater):
 
 class BracketsTakeOffCommand(BracketsOperater):
     def run(self, edit):
-        regions = [r for p in self.all_parents() for r in p]
+        parents = [p for p in self.all_parents()]
+        regions = [r for p in parents for r in p]
+        selections = []
+
         regions.sort()
+        for p in parents:
+            begin = p[0].a - regions.index(p[0])
+            end = p[1].a - regions.index(p[1])
+            selection = sublime.Region(begin, end)
+            selections.append(selection)
+
         regions.reverse()
         for r in regions:
             self.view.erase(edit, r)
+
+        self.view.sel().add_all(selections)

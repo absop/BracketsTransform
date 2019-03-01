@@ -6,8 +6,10 @@
 This is a package for SublimeText3 to transform brackets.
 It contains three type of operations:
   1. Transform the parentheses that contain the cursor's position.
-  2. Remove the pair of parentheses that contain the cursor and are closest to the cursor.
+  2. Remove the pair of parentheses that contain the cursor and are closest
+     to the cursor, and then select the contents of the parentheses.
   3. Select a pair of parentheses and their contents as a whole for your convenience.
+
 All the three commands support the simultaneous operation of multiple cursors.
 
 
